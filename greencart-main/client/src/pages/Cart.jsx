@@ -20,11 +20,18 @@ const Cart = () => {
             }
             // Place order with COD
             if(paymentOption === 'COD'){
-                const { data } = await axios.post('/api/order/cod', {
-                    userId: user._id,
-                    items: cartArray.map(item => ({product: item._id, quantity: item.quantity})),
-                    address: selectedAddress._id
-                });
+                const { data } = await axios.post(
+  'http://localhost:8000/api/order/cod',
+  {
+    userId: user._id,
+    items: cartArray.map(item => ({ product: item._id, quantity: item.quantity })),
+    address: selectedAddress._id
+  },
+  { withCredentials: true }
+);
+
+
+
                 if(data.success){
                     toast.success(data.message);
                     setCartItems({});
@@ -35,11 +42,17 @@ const Cart = () => {
             }
             // Place order with Stripe
             else{
-                const { data } = await axios.post('/api/order/stripe', {
-                    userId: user._id,
-                    items: cartArray.map(item => ({product: item._id, quantity: item.quantity})),
-                    address: selectedAddress._id
-                });
+                const { data } = await axios.post(
+  'http://localhost:8000/api/order/stripe',
+  {
+    userId: user._id,
+    items: cartArray.map(item => ({ product: item._id, quantity: item.quantity })),
+    address: selectedAddress._id
+  },
+  { withCredentials: true }
+);
+
+
                 if(data.success){
                     setCartItems({});
                     window.location.replace(data.url);
@@ -111,8 +124,12 @@ const Cart = () => {
                         <div className="flex items-center md:gap-6 gap-3">
                             <div onClick={() => { navigate(`/products/${product.category.toLowerCase()}/${product._id}`); scrollTo(0,0)}} 
                                  className="cursor-pointer w-24 h-24 flex items-center justify-center border border-gray-300 rounded overflow-hidden">
-                                <img className="max-w-full h-full object-cover" src={product.images[0]} alt={product.name} />
-                            </div>
+                                <img
+                                    className="max-w-full h-full object-cover"
+                                    src={product.image?.[0] || '/fallback-image.png'}
+                                    alt={product.name}
+                                /></div>
+
                             <div>
                                 <p className="hidden md:block font-semibold">{product.name}</p>
                                 <div className="font-normal text-gray-500/70">

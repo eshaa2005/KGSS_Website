@@ -5,19 +5,22 @@ import User from '../models/User.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// Place Order COD : /api/order/cod
+// -------------------- PLACE ORDER COD --------------------
 export const placeOrderCOD = async (req, res) => {
     try {
         const { userId, address, items } = req.body;
-        if (!address || items.length === 0) {
+        if (!address || !items || items.length === 0) {
             return res.json({ success: false, message: "Invalid data" });
         }
 
-        // Calculate total amount
-        let amount = await items.reduce(async (acc, item) => {
+        let amount = 0;
+        for (const item of items) {
             const product = await Product.findById(item.product);
-            return (await acc) + product.offerPrice * item.quantity;
-        }, 0);
+            if (!product) {
+                return res.status(404).json({ success: false, message: `Product not found: ${item.product}` });
+            }
+            amount += product.offerPrice * item.quantity;
+        }
 
         amount += Math.floor(amount * 0.02); // Tax
 
@@ -32,33 +35,36 @@ export const placeOrderCOD = async (req, res) => {
 
         return res.json({ success: true, message: "Order placed successfully!" });
     } catch (error) {
-        console.log(error.message);
-        res.json({ success: false, message: error.message });
+        console.error(error.message);
+        return res.json({ success: false, message: error.message });
     }
-}
+};
 
-// Place Order Stripe : /api/order/stripe
+// -------------------- PLACE ORDER STRIPE --------------------
 export const placeOrderStripe = async (req, res) => {
     try {
-        const userId = req.userId;
-        const { address, items } = req.body;
+        const { userId, address, items } = req.body;
         const { origin } = req.headers;
 
-        if (!address || items.length === 0) {
+        if (!address || !items || items.length === 0) {
             return res.json({ success: false, message: "Invalid data" });
         }
 
         let productData = [];
+        let amount = 0;
 
-        let amount = await items.reduce(async (acc, item) => {
+        for (const item of items) {
             const product = await Product.findById(item.product);
+            if (!product) {
+                return res.status(404).json({ success: false, message: `Product not found: ${item.product}` });
+            }
+            amount += product.offerPrice * item.quantity;
             productData.push({
                 name: product.name,
                 price: product.offerPrice,
                 quantity: item.quantity
             });
-            return (await acc) + product.offerPrice * item.quantity;
-        }, 0);
+        }
 
         amount += Math.floor(amount * 0.02); // Tax
 
@@ -71,7 +77,6 @@ export const placeOrderStripe = async (req, res) => {
             isPaid: false
         });
 
-        // Stripe line items
         const line_items = productData.map(item => ({
             price_data: {
                 currency: "usd",
@@ -87,39 +92,32 @@ export const placeOrderStripe = async (req, res) => {
             success_url: `${origin}/loader?next=my-orders`,
             cancel_url: `${origin}/cart`,
             payment_intent_data: {
-                metadata: {
-                    orderId: order._id.toString(),
-                    userId
-                }
+                metadata: { orderId: order._id.toString(), userId }
             }
         });
 
         return res.json({ success: true, url: session.url });
-
     } catch (error) {
-        console.log(error.message);
-        res.json({ success: false, message: error.message });
+        console.error(error.message);
+        return res.json({ success: false, message: error.message });
     }
-}
+};
 
-// Stripe Webhooks to verify payments : /stripe
+// -------------------- STRIPE WEBHOOK --------------------
 export const stripeWebhooks = async (req, res) => {
     const sig = req.headers["stripe-signature"];
     let event;
+
     try {
-        // Stripe requires raw body
-        event = stripe.webhooks.constructEvent(
-            req.body,
-            sig,
-            process.env.STRIPE_WEBHOOK_SECRET
-        );
+        event = stripe.webhooks.constructEvent(req.body, sig, process.env.STRIPE_WEBHOOK_SECRET);
     } catch (err) {
         console.error("Webhook signature verification failed:", err.message);
         return res.status(400).send(`Webhook Error: ${err.message}`);
     }
+
     try {
         let orderId, userId;
-        // Handle different Stripe events
+
         if (event.type === "checkout.session.completed") {
             const session = event.data.object;
             orderId = session.metadata.orderId;
@@ -129,52 +127,47 @@ export const stripeWebhooks = async (req, res) => {
             orderId = paymentIntent.metadata?.orderId;
             userId = paymentIntent.metadata?.userId;
         } else {
-            // ignore other events
             return res.status(200).json({ received: true });
         }
+
         if (!orderId || !userId) {
             console.error("Missing metadata for orderId or userId");
             return res.status(400).send("Missing metadata");
         }
-        // Update order to mark as paid
-        const updatedOrder = await Order.findByIdAndUpdate(
-            orderId,
-            { isPaid: true },
-            { new: true } // return updated document
-        );
+
+        const updatedOrder = await Order.findByIdAndUpdate(orderId, { isPaid: true }, { new: true });
         if (!updatedOrder) {
             return res.status(404).send("Order not found");
         }
-        // Clear user's cart
+
         await User.findByIdAndUpdate(userId, { cartItems: {} });
-        res.status(200).json({ received: true });
+
+        return res.status(200).json({ received: true });
     } catch (err) {
         console.error("Error handling webhook:", err.message);
-        res.status(500).send("Internal server error");
+        return res.status(500).send("Internal server error");
     }
 };
 
-
-// Get Orders by userId : /api/order/user
+// -------------------- GET USER ORDERS --------------------
 export const getUserOrders = async (req, res) => {
     try {
         const userId = req.userId;
-        // Include all orders for this user
         const orders = await Order.find({ userId }).populate("items.product address").sort({ createdAt: -1 });
-        res.json({ success: true, orders });
+        return res.json({ success: true, orders });
     } catch (error) {
-        console.log(error.message);
-        res.json({ success: false, message: error.message });
+        console.error(error.message);
+        return res.json({ success: false, message: error.message });
     }
-}
+};
 
-// Get all orders (for seller / admin) : /api/order/seller
+// -------------------- GET ALL ORDERS --------------------
 export const getAllOrders = async (req, res) => {
     try {
         const orders = await Order.find({}).populate("items.product address").sort({ createdAt: -1 });
-        res.json({ success: true, orders });
+        return res.json({ success: true, orders });
     } catch (error) {
-        console.log(error.message);
-        res.json({ success: false, message: error.message });
+        console.error(error.message);
+        return res.json({ success: false, message: error.message });
     }
-}
+};

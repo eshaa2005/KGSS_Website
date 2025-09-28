@@ -50,22 +50,22 @@ export const AppContextProvider = ( {children} ) => {
     }
 
     //Fetch all products
-    const fetchProducts = async () => {
-        try {
-            const { data } = await axios.get('/api/product/list');
-            if(data.success){
-                setProducts(data.products);
-            }
-            else{
-                toast.error(data.message);
-            }
-        } catch (error) {
-            toast.error(error.message);
-        }
-    }
-    // const fetchProducts = ()=>{
-    //     setProducts(dummyProducts)
+    // const fetchProducts = async () => {
+    //     try {
+    //         const { data } = await axios.get('/api/product/list');
+    //         if(data.success){
+    //             setProducts(data.products);
+    //         }
+    //         else{
+    //             toast.error(data.message);
+    //         }
+    //     } catch (error) {
+    //         toast.error(error.message);
+    //     }
     // }
+    const fetchProducts = async()=>{
+        setProducts(dummyProducts)
+    }
 
     // Add product to cart
     const addToCart = (itemId) => {
